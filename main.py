@@ -3,18 +3,16 @@ import os
 import time
 from threading import Thread
 
-# 【关键修改 1】不要在全局导入 pydub，移到函数内部！
-# from pydub import AudioSegment  <-- 删掉这一行
-
 # 默认安卓下载路径
 ANDROID_DOWNLOAD_DIR = "/storage/emulated/0/Download"
 
 def main(page: ft.Page):
-    # 【关键修改 2】最优先设置错误捕获，防止白屏
+    # 全局错误捕获，防止白屏
     try:
         setup_ui(page)
     except Exception as e:
-        page.add(ft.Text(f"启动严重错误: {e}", color="red", size=20))
+        # 如果还是报错，会显示在这里
+        page.add(ft.Text(f"启动错误: {e}", color="red", size=20))
         page.update()
 
 def setup_ui(page: ft.Page):
@@ -34,7 +32,7 @@ def setup_ui(page: ft.Page):
         try:
             page.client_storage.set("last_selected_file", path)
         except:
-            pass # 安卓上如果存储失败不要崩
+            pass 
 
     def load_last_file():
         try:
@@ -78,47 +76,41 @@ def setup_ui(page: ft.Page):
             selected_file_path.current.update()
             save_last_file(path)
 
-    # --- 这里的任务逻辑 ---
+    # --- 任务逻辑 ---
     def run_cutting_task(file_path, time_range, quality):
         try:
             loading_ring.current.visible = True
-            process_status.current.value = "正在初始化引擎..."
+            process_status.current.value = "正在初始化..."
             page.update()
 
-            # 【关键修改 3】在这里才导入 pydub！
-            # 这样就算 pydub 崩溃，UI 也能显示，且能捕获错误
+            # 延迟导入，防止启动崩
             try:
                 from pydub import AudioSegment
             except ImportError:
-                raise Exception("无法加载音频库，可能缺少依赖或环境不支持")
+                raise Exception("无法加载pydub库")
             except Exception as import_err:
-                raise Exception(f"音频库初始化失败: {import_err}")
+                raise Exception(f"库加载失败: {import_err}")
 
-            process_status.current.value = "正在加载音频(可能较慢)..."
+            process_status.current.value = "正在加载音频..."
             page.update()
 
-            # 检查文件
             if not os.path.exists(file_path):
                 raise Exception("找不到源文件")
 
             try:
                 audio = AudioSegment.from_file(file_path)
             except Exception as e:
-                # 安卓特定提示
-                raise Exception(f"解码失败。安卓需FFmpeg库支持。\n原生错误: {e}")
+                raise Exception(f"解码失败(安卓需FFmpeg): {e}")
 
             start_ms, end_ms = parse_range(time_range)
             if start_ms is None or end_ms is None:
                 raise Exception("时间格式错误 (例: 1-2)")
             
-            # 切割
             cut_audio = audio[start_ms:end_ms]
 
-            # 路径处理
             filename = os.path.basename(file_path)
             name, ext = os.path.splitext(filename)
             
-            # 尝试写入 Download，如果失败则尝试 App 私有目录
             output_dir = ANDROID_DOWNLOAD_DIR
             if not os.path.exists(output_dir):
                 output_dir = os.path.dirname(file_path)
@@ -133,12 +125,12 @@ def setup_ui(page: ft.Page):
             
             cut_audio.export(final_path, format=ext.replace(".", ""), bitrate=target_bitrate)
 
-            process_status.current.value = f"✅ 成功!\n保存至: {final_path}"
-            process_status.current.color = ft.colors.GREEN
+            process_status.current.value = f"✅ 成功!\n{final_path}"
+            process_status.current.color = "green"
             
         except Exception as e:
             process_status.current.value = f"❌ 错误: {str(e)}"
-            process_status.current.color = ft.colors.RED
+            process_status.current.color = "red"
         finally:
             loading_ring.current.visible = False
             page.update()
@@ -156,36 +148,43 @@ def setup_ui(page: ft.Page):
         t = Thread(target=run_cutting_task, args=(path, t_range, qual))
         t.start()
 
-    # --- UI 组件 ---
+    # --- UI 组件 (全部换成字符串) ---
     file_picker = ft.FilePicker(on_result=pick_files_result)
     page.overlay.append(file_picker)
 
     header = ft.Container(
         content=ft.Column([
-            ft.Icon(ft.icons.AUDIO_FILE, size=50, color=ft.colors.BLUE),
-            ft.Text("音频切割大师", size=24, weight=ft.FontWeight.BOLD),
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            # 这里的 ft.icons.AUDIO_FILE 改成了 "audio_file"
+            ft.Icon(name="audio_file", size=50, color="blue"), 
+            ft.Text("音频切割大师", size=24, weight="bold"),
+        ], horizontal_alignment="center"),
         alignment=ft.alignment.center,
         margin=ft.margin.only(bottom=20)
     )
 
     file_section = ft.Container(
         content=ft.Column([
-            ft.ElevatedButton("选择文件", icon=ft.icons.FOLDER_OPEN, 
+            ft.ElevatedButton("选择文件", icon="folder_open", 
                              on_click=lambda _: file_picker.pick_files()),
             ft.Text(ref=selected_file_path, value="未选择", size=12),
         ]),
-        padding=10, border=ft.border.all(1, ft.colors.GREY_300), border_radius=10
+        padding=10, border=ft.border.all(1, "grey"), border_radius=10
     )
 
-    time_input = ft.TextField(label="区间 (如 0-1)", value="0-1")
+    time_input = ft.TextField(
+        label="区间 (如 0-1)", 
+        value="0-1",
+        prefix_icon="timer" # 字符串图标
+    )
+    
     quality_dropdown = ft.Dropdown(
         label="质量", value="中 (128k)",
-        options=[ft.dropdown.Option("高 (320k)"), ft.dropdown.Option("中 (128k)")]
+        options=[ft.dropdown.Option("高 (320k)"), ft.dropdown.Option("中 (128k)")],
+        prefix_icon="compress" # 字符串图标
     )
 
     action_btn = ft.ElevatedButton(
-        "开始", icon=ft.icons.CUT, width=300, bgcolor=ft.colors.BLUE, color="white",
+        "开始切割", icon="cut", width=300, bgcolor="blue", color="white",
         on_click=start_processing
     )
 
@@ -199,7 +198,6 @@ def setup_ui(page: ft.Page):
         ft.Column([action_btn, ft.ProgressRing(ref=loading_ring, visible=False), ft.Text(ref=process_status)], horizontal_alignment="center")
     )
 
-    # 延迟加载上次文件，避免启动卡顿
     load_last_file()
 
 ft.app(target=main)
