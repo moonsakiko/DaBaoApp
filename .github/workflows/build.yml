@@ -1,0 +1,46 @@
+name: Build Audio Cutter APK
+on:
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code (拉取代码)
+      uses: actions/checkout@v3
+
+    # 1. 配置 Python 环境
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    # 2. 安装依赖 (Flet 和 Pydub)
+    - name: Install dependencies
+      run: |
+        pip install flet pydub
+        # 确保 requirements.txt 存在时也尝试安装
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    # 3. 配置 Flutter 环境
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.19.0'
+        cache: true
+
+    # 4. 开始打包
+    # --product: APP显示的名称
+    # --org: 包名标识 (最好不要用 com.example)
+    - name: Build APK
+      run: |
+        flet build apk --product "AudioCutter" --org "com.audiocutter.app" --description "简易音频切割压缩工具" --verbose
+
+    # 5. 上传打包好的文件
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: AudioCutter-Release
+        path: build/apk/app-release.apk
